@@ -8,16 +8,14 @@ Generate a usable Minecraft skin from:
 
 The worker returns a **64×64 PNG Minecraft skin** using the Classic/Steve player model.
 
-This version is designed for a locked-down/work laptop: **you do not need Git, Docker Desktop, Docker Hub, or Python installed locally.** GitHub Actions builds the Docker image in the cloud and publishes it to GitHub Container Registry (GHCR), then RunPod pulls that image.
+This project is designed for a locked-down/work laptop. You do **not** need Git, Docker Desktop, Docker Hub, Python, or PowerShell locally. GitHub Actions builds the Docker image in the cloud, GitHub Container Registry stores it, and RunPod runs it.
 
 ## What you need
 
-Only:
-
-1. A **GitHub account**.
-2. A **RunPod account**.
-3. A **web browser**.
-4. Windows PowerShell only if you want to test reference-image uploads from your laptop. PowerShell is already included with Windows.
+1. A **GitHub account**
+2. A **RunPod account**
+3. A **web browser**
+4. **Command Prompt (`cmd.exe`)** if you want to run the included local client
 
 You do **not** need:
 
@@ -27,6 +25,7 @@ Docker Desktop
 Git
 Python
 pip
+PowerShell
 ```
 
 ---
@@ -47,250 +46,157 @@ runpod-minecraft-skin-serverless/
 ├── requirements.txt
 ├── test_input.json
 ├── client.py
-├── runpod-client.ps1
+├── runpod-client.cmd
+├── runpod-client.js
 └── README.md
 ```
 
-The important new file is:
+For Windows without Python, use:
+
+```text
+runpod-client.cmd
+```
+
+The `.cmd` file launches `runpod-client.js` through Windows Script Host (`cscript.exe`), which is included with normal Windows installations.
+
+---
+
+# 2. GitHub build
+
+The included workflow:
 
 ```text
 .github/workflows/build-ghcr.yml
 ```
 
-GitHub Actions uses it to build the RunPod Docker image automatically.
+runs automatically on pushes to `main` or `master` and builds the Docker image as `linux/amd64`.
 
----
-
-# 2. Put the project on GitHub without Git
-
-## Option A — ChatGPT GitHub connector
-
-If you connected the GitHub app in ChatGPT, ChatGPT can publish/update the repository for you without Git on your laptop.
-
-A sensible repository name is:
-
-```text
-runpod-minecraft-skin-serverless
-```
-
-## Option B — GitHub website only
-
-If you want to do it manually:
-
-1. Open GitHub in your browser.
-2. Click **New repository**.
-3. Repository name:
-
-```text
-runpod-minecraft-skin-serverless
-```
-
-4. Choose **Public** for the simplest RunPod setup.
-5. Create the repository.
-6. Use **Add file → Upload files**.
-7. Upload the extracted project contents, including the `.github` folder.
-8. Commit the files to the repository's default branch (`main` or `master`).
-
-Do not upload only the ZIP as a single file. GitHub Actions needs the actual `Dockerfile`, `handler.py`, `.github/workflows/build-ghcr.yml`, and other project files in the repository.
-
----
-
-# 3. Let GitHub build the Docker image for you
-
-The included workflow runs automatically whenever files are pushed/committed to `main` or `master`.
-
-You can also start it manually:
+Check it here:
 
 ```text
 GitHub repository
 → Actions
 → Build RunPod Worker
-→ Run workflow
 ```
 
-The workflow performs this in GitHub's cloud:
-
-```text
-GitHub source code
-      ↓
-GitHub Actions
-      ↓
-Docker build (linux/amd64)
-      ↓
-GitHub Container Registry
-      ↓
-ghcr.io/YOUR_USERNAME/runpod-minecraft-skin-serverless:latest
-```
-
-You do not need Docker installed on your PC.
-
-To check the build:
-
-```text
-Repository → Actions → Build RunPod Worker
-```
-
-Wait for the workflow to show a green success check.
-
----
-
-# 4. Make the GHCR container public
-
-After the first successful workflow, GitHub creates a container package.
-
-Open your GitHub profile/organization and find **Packages**, then open the package for this repository.
-
-The image should be named something like:
-
-```text
-runpod-minecraft-skin-serverless
-```
-
-Open **Package settings** and change the package visibility to **Public**.
-
-This lets RunPod pull the container without GitHub registry credentials.
-
-Your image URL will normally be:
-
-```text
-ghcr.io/YOUR_GITHUB_USERNAME/runpod-minecraft-skin-serverless:latest
-```
-
-If the repository belongs to an organization, use the organization name instead of your username.
-
----
-
-# 5. Create the RunPod Serverless endpoint
-
-Open the RunPod Console.
-
-Go to:
-
-```text
-Serverless
-```
-
-Create a new endpoint/import a custom container image.
-
-For the container image, enter:
-
-```text
-ghcr.io/YOUR_GITHUB_USERNAME/runpod-minecraft-skin-serverless:latest
-```
-
-Example only:
+The published image for this repository is:
 
 ```text
 ghcr.io/rageoffire/runpod-minecraft-skin-serverless:latest
 ```
 
-Use your real GitHub username/organization.
+Make sure the GitHub Container Registry package is **Public** so RunPod can pull it without registry credentials.
 
 ---
 
-# 6. RunPod settings
+# 3. Create the RunPod Serverless endpoint
 
-Use these as the initial settings.
+Open RunPod and go to:
 
-## Endpoint type
+```text
+Serverless
+→ New Endpoint
+→ Import from Docker Registry
+```
+
+Use this container image:
+
+```text
+ghcr.io/rageoffire/runpod-minecraft-skin-serverless:latest
+```
+
+Recommended endpoint name:
+
+```text
+minecraft-skin-ai
+```
+
+Endpoint type:
 
 ```text
 Queue
 ```
 
-## GPU
+---
 
-Use an NVIDIA GPU with **24 GB VRAM or more** when possible.
-
-Reference-image mode loads SDXL plus IP-Adapter, so smaller GPUs can run out of VRAM.
-
-## Active workers
-
-For cheaper testing:
-
-```text
-0
-```
-
-For lower cold-start latency:
-
-```text
-1
-```
-
-## Max workers
+# 4. Recommended GPU/settings
 
 Start with:
 
 ```text
-1
+GPU: RTX 4090 24 GB
+Active Workers: 0
+Max Workers: 1
+Execution Timeout: 300 seconds or more
+Container Disk: 20 GB or more
 ```
 
-## Execution timeout
+If the worker reports CUDA out-of-memory errors, move to a 48 GB GPU such as A6000/A40/L40S-class hardware.
 
-Use:
+For faster responses with fewer cold starts, change:
 
 ```text
-300 seconds or more
+Active Workers: 1
 ```
 
-## Container disk
-
-Use:
+For cheap testing, keep:
 
 ```text
-20 GB or more
+Active Workers: 0
 ```
 
 ---
 
-# 7. Configure RunPod model caching
+# 5. Configure RunPod model caching
 
-In the endpoint settings, find the **Model** field.
-
-Enter exactly:
+In the RunPod endpoint settings, set the **Model** field to exactly:
 
 ```text
 monadical-labs/minecraft-skin-generator-sdxl
 ```
 
-The large Minecraft SDXL model is then handled by RunPod's model cache.
+The Minecraft SDXL model is then loaded from RunPod's Hugging Face cache.
 
-The reference-image IP-Adapter is already baked into the Docker image, so do not add a second model to this field.
+The reference-image IP-Adapter is already included in the Docker image, so do not configure a second model.
+
+Optional environment variable if model initialization times out:
+
+```text
+RUNPOD_INIT_TIMEOUT=800
+```
 
 ---
 
-# 8. Deploy the endpoint
+# 6. Deploy the endpoint
 
 Click **Deploy Endpoint**.
 
-When the endpoint is created, copy its **Endpoint ID**.
-
-Example:
+After deployment, copy the endpoint ID. It will look similar to:
 
 ```text
 abc123xyz456
 ```
 
-You will use this ID when calling the API.
+You need this ID for the Command Prompt client.
 
 ---
 
-# 9. Test text generation entirely in the RunPod website
+# 7. Test directly in RunPod
 
-Open your endpoint's **Requests** area and submit:
+Open the endpoint's **Requests** tab and send:
 
 ```json
 {
   "input": {
     "prompt": "white fox warrior, bright blue eyes, navy hoodie, black pants",
     "steps": 35,
+    "guidance_scale": 7.5,
     "format": "modern"
   }
 }
 ```
 
-A completed response should contain an output similar to:
+A successful result should include:
 
 ```json
 {
@@ -303,103 +209,123 @@ A completed response should contain an output similar to:
     "format": "modern",
     "player_model": "classic",
     "source_mode": "text",
-    "seed": 123456,
-    "steps": 35,
-    "guidance_scale": 7.5
+    "seed": 123456
   }
 }
 ```
 
-The PNG is returned as Base64 in:
+The PNG data is returned in:
 
 ```text
 output.image_base64
 ```
 
-For convenient automatic saving to `skin.png`, use the included PowerShell client below.
+The included Command Prompt client automatically decodes this and saves a real `skin.png` file.
 
 ---
 
-# 10. Create a RunPod API key
+# 8. Create a RunPod API key
 
-In RunPod Console, open the API-key settings and create a key that can invoke your Serverless endpoint.
+In RunPod, create an API key that can invoke your Serverless endpoint.
 
-Keep the key private.
+Keep the API key private. Never commit it to GitHub and never put it in public frontend JavaScript.
 
-Never commit it to GitHub and never put it into public website JavaScript.
-
----
-
-# 11. Zero-install Windows client
-
-The project includes:
+You need:
 
 ```text
-runpod-client.ps1
-```
-
-It uses Windows PowerShell/.NET directly. No Python, pip, Git, curl install, or Docker is required.
-
-Open PowerShell in the extracted project folder and set your credentials for the current PowerShell window:
-
-```powershell
-$env:RUNPOD_API_KEY="YOUR_RUNPOD_API_KEY"
-$env:RUNPOD_ENDPOINT_ID="YOUR_ENDPOINT_ID"
-```
-
-## Generate from text
-
-```powershell
-.\runpod-client.ps1 `
-  -Prompt "white fox warrior, blue eyes, navy hoodie" `
-  -Output ".\skin.png"
-```
-
-The script calls RunPod, decodes the Base64 output, and writes:
-
-```text
-skin.png
+RUNPOD_API_KEY
+RUNPOD_ENDPOINT_ID
 ```
 
 ---
 
-# 12. Generate from a normal image — no Python required
+# 9. Command Prompt client — zero install
 
-Put your image somewhere on the laptop, for example:
+Download these two files from the repository and put them in the same folder:
 
 ```text
-C:\Users\YOUR_NAME\Pictures\character.png
+runpod-client.cmd
+runpod-client.js
 ```
 
-Then run:
+Open **Command Prompt** in that folder.
 
-```powershell
-.\runpod-client.ps1 `
-  -Image "C:\Users\YOUR_NAME\Pictures\character.png" `
-  -Output ".\skin.png"
+Set your credentials for the current Command Prompt window:
+
+```cmd
+set RUNPOD_API_KEY=YOUR_RUNPOD_API_KEY
+set RUNPOD_ENDPOINT_ID=YOUR_ENDPOINT_ID
 ```
 
-The image does **not** need to be a Minecraft skin.
+Check that they are set:
 
-You can use normal character art, screenshots, avatars, renders, PNG/JPEG/WebP images, etc.
+```cmd
+echo %RUNPOD_ENDPOINT_ID%
+```
 
-The worker currently limits the decoded reference image to **6 MB**.
+Do not share the API key or paste it into screenshots.
 
 ---
 
-# 13. Generate from prompt + image
+# 10. Generate from text in Command Prompt
 
-This is normally the best mode:
+Run:
 
-```powershell
-.\runpod-client.ps1 `
-  -Prompt "keep this character's hair, outfit, colors and overall appearance; turn it into a clean Minecraft skin" `
-  -Image "C:\Users\YOUR_NAME\Pictures\character.png" `
-  -ReferenceStrength 0.75 `
-  -Output ".\skin.png"
+```cmd
+runpod-client.cmd --prompt "white fox warrior, blue eyes, navy hoodie" --output skin.png
 ```
 
-Recommended starting reference strength:
+The client will:
+
+```text
+Send request to RunPod
+        ↓
+Wait for generation
+        ↓
+Read output.image_base64
+        ↓
+Decode PNG
+        ↓
+Save skin.png
+```
+
+When successful you should see output similar to:
+
+```text
+Sending request to RunPod...
+Saved: C:\...\skin.png
+Size: 64x64
+Seed: 123456
+Mode: text
+```
+
+---
+
+# 11. Generate from a normal image
+
+Your source image does **not** need to be a Minecraft skin.
+
+Supported examples include normal character art, avatars, screenshots, renders, PNG/JPEG/WebP images, etc.
+
+Example:
+
+```cmd
+runpod-client.cmd --image "C:\Users\YOUR_NAME\Pictures\character.png" --output skin.png
+```
+
+The decoded reference image must currently be **6 MB or smaller**.
+
+---
+
+# 12. Generate from prompt + image
+
+This is usually the best mode:
+
+```cmd
+runpod-client.cmd --prompt "keep this character's hair, outfit, colors and appearance" --image "C:\Users\YOUR_NAME\Pictures\character.png" --strength 0.75 --output skin.png
+```
+
+Recommended starting strength:
 
 ```text
 0.70 - 0.75
@@ -414,40 +340,109 @@ General guideline:
 0.90+       = very strong image influence; UV quality can become less stable
 ```
 
+If resemblance is too weak:
+
+```text
+0.75 → 0.80
+```
+
+If the Minecraft UV starts looking broken:
+
+```text
+0.75 → 0.65
+```
+
 ---
 
-# 14. Use a fixed seed
+# 13. Fixed seed
 
 For repeatable generation:
 
-```powershell
-.\runpod-client.ps1 `
-  -Prompt "blue fire mage" `
-  -Seed 12345 `
-  -Output ".\skin.png"
+```cmd
+runpod-client.cmd --prompt "blue fire mage" --seed 12345 --output skin.png
 ```
 
 ---
 
-# 15. PowerShell execution-policy problem
+# 14. Other Command Prompt options
 
-Some work laptops block running `.ps1` files directly.
+Show help:
 
-If PowerShell reports that script execution is disabled, you can run the file for that one process with:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\runpod-client.ps1 `
-  -Prompt "white fox warrior with blue eyes" `
-  -Output ".\skin.png"
+```cmd
+runpod-client.cmd --help
 ```
 
-This does not require installing software.
+Available options:
 
-If your company policy blocks PowerShell entirely, use the RunPod website's Requests panel for text-only testing or call the API from your own backend/server.
+```text
+--prompt TEXT
+--image PATH
+--strength NUMBER
+--reference-strength NUMBER
+--steps NUMBER
+--guidance NUMBER
+--seed NUMBER
+--output PATH
+--format modern|legacy
+--negative TEXT
+--help
+```
+
+Example with more settings:
+
+```cmd
+runpod-client.cmd --prompt "cyberpunk girl with purple hair" --steps 40 --guidance 7.5 --seed 777 --negative "blurry, broken skin" --output cyberpunk.png
+```
 
 ---
 
-# 16. Direct RunPod API
+# 15. How the Command Prompt client works
+
+`cmd.exe` launches:
+
+```text
+runpod-client.cmd
+        ↓
+cscript.exe
+        ↓
+runpod-client.js
+```
+
+The JavaScript uses built-in Windows components:
+
+```text
+Windows Script Host
+WinHTTP
+MSXML
+ADODB.Stream
+```
+
+No Python or PowerShell is required.
+
+For image input, the JavaScript reads the image as binary, converts it to Base64, sends it to RunPod, receives the generated Minecraft skin, decodes it, and writes the PNG to disk.
+
+---
+
+# 16. If `cscript.exe` is blocked
+
+Some company-managed Windows computers disable Windows Script Host.
+
+If you receive an error saying `cscript.exe` is unavailable or Windows Script Host is disabled, the local `.cmd` client cannot run on that machine.
+
+You can still use:
+
+```text
+RunPod endpoint
+→ Requests
+```
+
+for testing, or call the RunPod API from your own backend/server.
+
+This does not affect the RunPod worker itself.
+
+---
+
+# 17. Direct RunPod API
 
 Synchronous endpoint:
 
@@ -455,13 +450,13 @@ Synchronous endpoint:
 POST https://api.runpod.ai/v2/ENDPOINT_ID/runsync
 ```
 
-Authorization:
+Authorization header:
 
 ```text
 Authorization: Bearer YOUR_RUNPOD_API_KEY
 ```
 
-Request:
+Text request:
 
 ```json
 {
@@ -487,11 +482,11 @@ Reference-image request shape:
 }
 ```
 
-`runpod-client.ps1` converts your local image to Base64 automatically.
+`runpod-client.cmd` handles the Base64 conversion automatically.
 
 ---
 
-# 17. Input options
+# 18. Input options
 
 | Field | Required | Default | Description |
 |---|---:|---:|---|
@@ -505,13 +500,13 @@ Reference-image request shape:
 | `negative_prompt` | No | empty | Things the model should avoid |
 | `transparency_cutoff` | No | `50` | Overlay-background cleanup threshold |
 
-\* Provide at least a prompt, a reference image, or both.
+*Provide at least a prompt, a reference image, or both.
 
 ---
 
-# 18. Output
+# 19. Output
 
-Typical output:
+Typical worker output:
 
 ```json
 {
@@ -534,105 +529,85 @@ Typical output:
 
 ---
 
-# 19. Updating the project later — still no Git required
+# 20. Updating the project later
 
-You have three easy options.
+No Git installation is required.
 
-## ChatGPT + GitHub connector
+You can ask ChatGPT to update the connected GitHub repository, or edit files directly on GitHub's website.
 
-Ask ChatGPT to update the repository files and publish the change.
-
-## GitHub website
-
-Open a file in the repository, click the edit button, make the change, and commit it to your default branch.
-
-For replacing multiple files, use **Add file → Upload files**.
-
-## Automatic rebuild
-
-Every commit to `main` or `master` triggers:
+Every commit to `main` or `master` automatically triggers the GitHub Actions Docker build and republishes:
 
 ```text
-.github/workflows/build-ghcr.yml
+ghcr.io/rageoffire/runpod-minecraft-skin-serverless:latest
 ```
 
-GitHub Actions rebuilds and republishes:
-
-```text
-ghcr.io/YOUR_USERNAME/runpod-minecraft-skin-serverless:latest
-```
-
-You therefore never need to run `docker build` or `docker push` yourself.
-
-After a new image is published, restart/redeploy your RunPod endpoint/workers so they use the newest image.
+After publishing a new container, restart/redeploy the RunPod worker if necessary so it pulls the newest image.
 
 ---
 
-# 20. Troubleshooting
-
-## GitHub Actions says package write is denied
-
-Open the repository settings and check the Actions/workflow permissions. The workflow needs permission to write packages.
-
-The included workflow requests:
-
-```yaml
-permissions:
-  contents: read
-  packages: write
-```
+# 21. Troubleshooting
 
 ## RunPod cannot pull the image
 
-Make sure the GHCR package is **Public** and that the URL is correct:
+Make sure the GHCR package is public and use the lowercase image path:
 
 ```text
-ghcr.io/YOUR_USERNAME/runpod-minecraft-skin-serverless:latest
+ghcr.io/rageoffire/runpod-minecraft-skin-serverless:latest
 ```
+
+Docker/GHCR repository image names must be lowercase.
 
 ## `CUDA GPU is required`
 
-Your worker is not running on a compatible NVIDIA GPU. Edit the RunPod endpoint GPU selection.
+Make sure the endpoint is using an NVIDIA GPU worker.
 
 ## CUDA out of memory
 
-Choose a GPU with more VRAM. **24 GB+** is recommended for this project, particularly with reference images.
+Use a GPU with more VRAM. Start around 24 GB; use 48 GB if needed.
 
 ## Model downloads every startup
 
-Check that the RunPod endpoint's Model field is exactly:
+Check that RunPod's Model field is exactly:
 
 ```text
 monadical-labs/minecraft-skin-generator-sdxl
 ```
 
-## `reference image is too large`
+## Reference image is too large
 
-Use an image of **6 MB or smaller**.
+Use an image of 6 MB or smaller.
+
+## `cscript.exe is not available`
+
+Windows Script Host is missing or disabled by your organization. Use the RunPod Requests panel or your own backend instead.
+
+## Job does not complete
+
+Check:
+
+```text
+RunPod endpoint
+→ Workers
+→ Logs
+```
+
+Look for CUDA errors, model loading errors, or initialization timeout messages.
 
 ## Poor reference-image resemblance
 
-Try increasing:
-
-```text
-0.70 → 0.80
-```
-
-Also use a clear image and tell the prompt which visual details are important.
+Increase the reference strength slightly and use a clean reference image.
 
 ## Broken-looking Minecraft skin
 
-Try a different seed. AI-generated Minecraft UV layouts are not perfect every generation.
-
-For production, generating several candidates and selecting the best one is recommended.
+Try another seed. Generative UV output is not guaranteed to be perfect on every generation.
 
 ---
 
-# 21. Security
+# 22. Security
 
-Do not put your RunPod API key into a public website frontend.
+Never put your RunPod API key in public frontend code.
 
-Use:
+Recommended production architecture:
 
 ```text
 Browser / App
@@ -644,30 +619,37 @@ RunPod Serverless
 Minecraft skin PNG
 ```
 
-The RunPod API key should live only on your backend/server or temporarily in your local PowerShell environment for private testing.
+For private local testing, the API key can be stored temporarily in the current Command Prompt process using:
+
+```cmd
+set RUNPOD_API_KEY=YOUR_KEY
+```
+
+Closing that Command Prompt window removes that process environment variable.
 
 ---
 
-# 22. Fastest setup checklist
+# 23. Fast setup checklist
 
 ```text
-[ ] GitHub repository created
-[ ] Project files uploaded to repository
-[ ] .github/workflows/build-ghcr.yml exists
-[ ] GitHub Actions build succeeded
-[ ] GHCR package made Public
-[ ] RunPod Queue Serverless endpoint created
-[ ] Container image = ghcr.io/YOUR_USERNAME/runpod-minecraft-skin-serverless:latest
-[ ] RunPod Model = monadical-labs/minecraft-skin-generator-sdxl
-[ ] GPU = about 24 GB VRAM or more
+[ ] GitHub Actions build is green
+[ ] GHCR package is Public
+[ ] RunPod Queue endpoint created
+[ ] Container image = ghcr.io/rageoffire/runpod-minecraft-skin-serverless:latest
+[ ] Model = monadical-labs/minecraft-skin-generator-sdxl
+[ ] GPU = RTX 4090 24 GB or larger
+[ ] Active Workers = 0 for testing
+[ ] Max Workers = 1
 [ ] Endpoint deployed
-[ ] Text request works in RunPod Requests panel
+[ ] Text request works in RunPod Requests
 [ ] RunPod API key created
-[ ] runpod-client.ps1 successfully creates skin.png
-[ ] Reference image mode works
+[ ] RUNPOD_API_KEY set in Command Prompt
+[ ] RUNPOD_ENDPOINT_ID set in Command Prompt
+[ ] runpod-client.cmd creates skin.png
+[ ] Reference-image generation works
 ```
 
-Once those boxes are checked, the service is ready for use without Git, Docker Desktop, Docker Hub, or Python on your laptop.
+Once those steps work, the service is ready without Git, Docker Desktop, Docker Hub, Python, or PowerShell on your laptop.
 
 ---
 
