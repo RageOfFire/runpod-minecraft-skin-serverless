@@ -1,0 +1,8 @@
+{
+  "input": {
+    "prompt": "white fox warrior, bright blue eyes, navy hoodie, black pants",
+    "steps": 35,
+    "guidance_scale": 7.5,
+    "format": "modern"
+  }
+}
