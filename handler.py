@@ -125,7 +125,14 @@ def get_pipeline() -> StableDiffusionXLPipeline:
         )
         pipe.set_ip_adapter_scale(0.0)
         pipe.set_progress_bar_config(disable=True)
-        pipe.enable_vae_slicing()
+
+        # Diffusers has exposed VAE slicing on different objects across versions.
+        # Support both APIs and simply skip the optimization if neither exists.
+        if hasattr(pipe, "enable_vae_slicing"):
+            pipe.enable_vae_slicing()
+        elif getattr(pipe, "vae", None) is not None and hasattr(pipe.vae, "enable_slicing"):
+            pipe.vae.enable_slicing()
+
         pipe.to("cuda")
 
         # Ampere+ GPUs benefit from TF32 for some matmuls without materially
