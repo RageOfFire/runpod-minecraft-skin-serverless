@@ -27,6 +27,14 @@ snapshot_download(
 )
 PY
 
+# Runtime must use RunPod's cached Minecraft model instead of silently
+# downloading the multi-GB checkpoint into ephemeral worker storage. This also
+# avoids hf-xet reconstruction/I/O failures during live requests.
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    DIFFUSERS_OFFLINE=1 \
+    HF_HUB_DISABLE_XET=1
+
 COPY handler.py .
 COPY test_input.json .
 
