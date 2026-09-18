@@ -3,6 +3,14 @@ name: Build RunPod Worker
 on:
   push:
     branches: ["main", "master"]
+    paths:
+      - "Dockerfile"
+      - "handler.py"
+      - "requirements.txt"
+      - "test_input.json"
+      - "tests/**"
+      - ".dockerignore"
+      - ".github/workflows/build-ghcr.yml"
   workflow_dispatch:
 
 permissions:
