@@ -152,7 +152,7 @@ Technology:
 ```text
 C#
 WinForms
-.NET 10
+.NET 8
 Windows x64
 Multi-file publish
 ```
@@ -168,7 +168,7 @@ MinecraftSkinGenerator-Full.zip
 MinecraftSkinGenerator-Lite.zip
   → self-contained = false
   → much smaller
-  → requires the .NET 10 Desktop Runtime
+  → requires the .NET 8 Desktop Runtime
 ```
 
 Neither package uses single-file publishing. Keep the extracted files together in the same folder as `MinecraftSkinGenerator.exe`.
@@ -217,7 +217,7 @@ MinecraftSkinGenerator-Lite.zip
 
 Choose **Full** if you want the app to run without installing .NET.
 
-Choose **Lite** if the PC already has the .NET 10 Desktop Runtime and you want a much smaller download.
+Choose **Lite** if the PC already has the .NET 8 Desktop Runtime and you want a much smaller download.
 
 Extract the entire ZIP, keep all extracted files together, and run:
 
