@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="x-ua-compatible" content="IE=9" />
+<title>Minecraft Skin Generator</title>
+<hta:application
+    id="app"
+    applicationname="Minecraft Skin Generator"
+    border="dialog"
+    caption="yes"
+    maximizebutton="no"
+    minimizebutton="yes"
+    scroll="no"
+    singleinstance="yes"
+    sysmenu="yes"
+    windowstate="normal"
+/>
+<script type="text/javascript" src="runpod-client.js"></script>
+<style type="text/css">
+    body {
+        margin: 0;
+        padding: 0;
+        background: #17191d;
+        color: #f3f3f3;
+        font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+        font-size: 14px;
+    }
+    .wrap {
+        padding: 20px 22px 18px 22px;
+    }
+    h1 {
+        margin: 0 0 4px 0;
+        font-size: 23px;
+        font-weight: 600;
+    }
+    .sub {
+        color: #aeb4bd;
+        margin-bottom: 18px;
+    }
+    .card {
+        background: #22252b;
+        border: 1px solid #353a43;
+        border-radius: 8px;
+        padding: 14px;
+        margin-bottom: 13px;
+    }
+    label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    textarea, input[type="text"], input[type="file"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #121419;
+        color: #f3f3f3;
+        border: 1px solid #444b56;
+        border-radius: 5px;
+        padding: 8px;
+        font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    textarea {
+        height: 90px;
+        resize: vertical;
+    }
+    .row {
+        width: 100%;
+        overflow: hidden;
+    }
+    .col {
+        float: left;
+        width: 31%;
+        margin-right: 3.5%;
+    }
+    .col.last {
+        margin-right: 0;
+    }
+    .hint {
+        color: #9299a3;
+        font-size: 12px;
+        margin-top: 5px;
+    }
+    .credential-ok {
+        color: #8fd19e;
+    }
+    .credential-bad {
+        color: #ff9f9f;
+    }
+    .buttons {
+        margin-top: 15px;
+    }
+    button {
+        border: 0;
+        border-radius: 5px;
+        padding: 9px 16px;
+        font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+        margin-right: 8px;
+    }
+    #generateBtn {
+        background: #6f5cff;
+        color: white;
+        font-weight: 600;
+    }
+    #openBtn {
+        background: #343943;
+        color: white;
+    }
+    button:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+    #status {
+        margin-top: 13px;
+        min-height: 38px;
+        padding: 9px 10px;
+        background: #111318;
+        border: 1px solid #303540;
+        border-radius: 5px;
+        color: #cfd3da;
+        white-space: pre-wrap;
+    }
+    .clear {
+        clear: both;
+    }
+</style>
+<script type="text/javascript">
+    var lastOutputPath = "";
+
+    function getAppPath() {
+        var p = decodeURIComponent(window.location.pathname);
+        if (/^\/[A-Za-z]:/.test(p)) {
+            p = p.substring(1);
+        }
+        return p.replace(/\//g, "\\");
+    }
+
+    function getAppDir() {
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        return fso.GetParentFolderName(getAppPath());
+    }
+
+    function setStatus(message, isError) {
+        var el = document.getElementById("status");
+        el.innerText = message;
+        el.style.color = isError ? "#ffaaaa" : "#cfd3da";
+    }
+
+    function refreshCredentialStatus() {
+        var status = RunPodClient.getCredentialStatus();
+        var el = document.getElementById("credentialStatus");
+
+        if (status.apiKeyConfigured && status.endpointConfigured) {
+            el.className = "credential-ok";
+            el.innerText = "Configured - Endpoint: " + status.endpointId;
+        } else {
+            el.className = "credential-bad";
+            el.innerText = "Missing credentials - edit the top of runpod-client.js";
+        }
+    }
+
+    function init() {
+        try {
+            window.resizeTo(660, 690);
+        } catch (e) {}
+
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        document.getElementById("output").value = fso.BuildPath(getAppDir(), "skin.png");
+        refreshCredentialStatus();
+        document.getElementById("prompt").focus();
+    }
+
+    function generateSkin() {
+        var fileInput = document.getElementById("image");
+        var imagePath = String(fileInput.value || "");
+
+        var opts = {
+            prompt: document.getElementById("prompt").value,
+            image: imagePath,
+            strength: document.getElementById("strength").value,
+            steps: document.getElementById("steps").value,
+            guidance: document.getElementById("guidance").value,
+            seed: document.getElementById("seed").value,
+            output: document.getElementById("output").value,
+            format: "modern",
+            negative: document.getElementById("negative").value
+        };
+
+        var btn = document.getElementById("generateBtn");
+        btn.disabled = true;
+        document.getElementById("openBtn").disabled = true;
+        setStatus("Starting...");
+
+        window.setTimeout(function () {
+            try {
+                var result = RunPodClient.generate(opts, function (message) {
+                    setStatus(message);
+                });
+
+                lastOutputPath = result.outputPath;
+                var summary = "Done! Saved:\n" + result.outputPath;
+                if (result.width && result.height) {
+                    summary += "\nSize: " + result.width + "x" + result.height;
+                }
+                if (result.seed !== undefined && result.seed !== null) {
+                    summary += "\nSeed: " + result.seed;
+                }
+                if (result.sourceMode) {
+                    summary += "\nMode: " + result.sourceMode;
+                }
+
+                setStatus(summary);
+                document.getElementById("openBtn").disabled = false;
+            } catch (e) {
+                setStatus("ERROR:\n" + (e.message || String(e)), true);
+            }
+
+            btn.disabled = false;
+        }, 50);
+    }
+
+    function openOutputFolder() {
+        if (!lastOutputPath) return;
+
+        try {
+            var shell = new ActiveXObject("WScript.Shell");
+            shell.Run('explorer.exe /select,"' + lastOutputPath + '"', 1, false);
+        } catch (e) {
+            setStatus("Saved to:\n" + lastOutputPath);
+        }
+    }
+</script>
+</head>
+<body onload="init()">
+<div class="wrap">
+    <h1>Minecraft Skin Generator</h1>
+    <div class="sub">RunPod Serverless - prompt, image, or both</div>
+
+    <div class="card">
+        <label>RunPod credentials</label>
+        <div id="credentialStatus">Checking...</div>
+        <div class="hint">Your API key stays in your local runpod-client.js file. Do not commit a real key to the public GitHub repo.</div>
+    </div>
+
+    <div class="card">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" placeholder="Example: keep the character's hair, outfit and colors; convert into a clean Minecraft skin"></textarea>
+        <div class="hint">You can leave this blank when using only a reference image.</div>
+    </div>
+
+    <div class="card">
+        <label for="image">Reference image (optional)</label>
+        <input id="image" type="file" accept=".png,.jpg,.jpeg,.webp,.gif" />
+        <div class="hint">PNG/JPG/WebP/GIF, maximum 6 MB.</div>
+    </div>
+
+    <div class="card">
+        <div class="row">
+            <div class="col">
+                <label for="strength">Reference strength</label>
+                <input id="strength" type="text" value="0.75" />
+            </div>
+            <div class="col">
+                <label for="steps">Steps</label>
+                <input id="steps" type="text" value="35" />
+            </div>
+            <div class="col last">
+                <label for="guidance">Guidance</label>
+                <input id="guidance" type="text" value="7.5" />
+            </div>
+            <div class="clear"></div>
+        </div>
+
+        <div style="margin-top: 12px;">
+            <label for="seed">Seed (optional)</label>
+            <input id="seed" type="text" placeholder="Leave blank for random" />
+        </div>
+
+        <div style="margin-top: 12px;">
+            <label for="negative">Negative prompt (optional)</label>
+            <input id="negative" type="text" placeholder="Things the model should avoid" />
+        </div>
+    </div>
+
+    <div class="card">
+        <label for="output">Output file</label>
+        <input id="output" type="text" />
+        <div class="hint">Defaults to skin.png next to this client.</div>
+    </div>
+
+    <div class="buttons">
+        <button id="generateBtn" onclick="generateSkin()">Generate Skin</button>
+        <button id="openBtn" onclick="openOutputFolder()" disabled>Show Output</button>
+    </div>
+
+    <div id="status">Ready.</div>
+</div>
+</body>
+</html>
