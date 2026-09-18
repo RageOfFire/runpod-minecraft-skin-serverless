@@ -133,19 +133,21 @@ internal sealed class MainForm : Form
 
     private Control BuildBody()
     {
-        var split = new SplitContainer
+        var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 610,
-            Panel1MinSize = 470,
-            Panel2MinSize = 280
+            ColumnCount = 2,
+            RowCount = 1
         };
 
-        split.Panel1.Controls.Add(BuildInputPanel());
-        split.Panel2.Controls.Add(BuildPreviewPanel());
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        return split;
+        layout.Controls.Add(BuildInputPanel(), 0, 0);
+        layout.Controls.Add(BuildPreviewPanel(), 1, 0);
+
+        return layout;
     }
 
     private Control BuildInputPanel()
