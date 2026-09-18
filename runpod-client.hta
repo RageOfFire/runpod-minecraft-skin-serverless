@@ -10,7 +10,7 @@
     caption="yes"
     maximizebutton="no"
     minimizebutton="yes"
-    scroll="no"
+    scroll="yes"
     singleinstance="yes"
     sysmenu="yes"
     windowstate="normal"
@@ -162,7 +162,7 @@
 
     function init() {
         try {
-            window.resizeTo(660, 690);
+            var targetHeight = Math.min(820, screen.availHeight - 80);\n            window.resizeTo(680, targetHeight);
         } catch (e) {}
 
         var fso = new ActiveXObject("Scripting.FileSystemObject");
