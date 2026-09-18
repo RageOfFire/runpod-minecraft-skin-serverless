@@ -48,6 +48,7 @@ runpod-minecraft-skin-serverless/
 ├── client.py
 ├── runpod-client.cmd
 ├── runpod-client.js
+├── runpod-client.hta
 └── README.md
 ```
 
@@ -239,64 +240,78 @@ RUNPOD_ENDPOINT_ID
 
 ---
 
-# 9. Command Prompt client — zero install
+# 9. Configure the Windows client
 
-Download these two files from the repository and put them in the same folder:
+Put these three files in the same folder:
 
 ```text
 runpod-client.cmd
 runpod-client.js
+runpod-client.hta
 ```
 
-Open **Command Prompt** in that folder.
+Open `runpod-client.js` in Notepad and edit the two lines at the very top:
 
-Set your credentials for the current Command Prompt window:
-
-```cmd
-set RUNPOD_API_KEY=YOUR_RUNPOD_API_KEY
-set RUNPOD_ENDPOINT_ID=YOUR_ENDPOINT_ID
+```javascript
+var RUNPOD_API_KEY = "PASTE_YOUR_RUNPOD_API_KEY_HERE";
+var RUNPOD_ENDPOINT_ID = "PASTE_YOUR_RUNPOD_ENDPOINT_ID_HERE";
 ```
 
-Check that they are set:
+Replace the placeholder values with your real RunPod API key and endpoint ID.
 
-```cmd
-echo %RUNPOD_ENDPOINT_ID%
-```
+**Important:** the API key is stored as plain text in your local JavaScript file. Keep that local copy private. This GitHub repository is public, so never commit or upload a real API key.
 
-Do not share the API key or paste it into screenshots.
+Environment variables are still supported as a fallback, but they are no longer required.
 
 ---
 
-# 10. Generate from text in Command Prompt
+# 10. Double-click GUI
 
-Run:
+Double-click:
+
+```text
+runpod-client.cmd
+```
+
+When the CMD file is started with no arguments, it opens the Windows GUI.
+
+The GUI lets you:
+
+- type a prompt
+- browse for a PNG/JPG/WebP/GIF reference image
+- set reference strength
+- set steps and guidance
+- optionally set a seed and negative prompt
+- choose the output PNG path
+- click **Generate Skin**
+- click **Show Output** when generation finishes
+
+The default output is:
+
+```text
+skin.png
+```
+
+next to the client files.
+
+The GUI uses Windows `mshta.exe` and built-in Windows components. No Python, PowerShell, Git, Docker Desktop, or additional install is required.
+
+You can still use Command Prompt mode by passing arguments:
 
 ```cmd
 runpod-client.cmd --prompt "white fox warrior, blue eyes, navy hoodie" --output skin.png
 ```
 
-The client will:
+The same `.cmd` therefore works as both:
 
 ```text
-Send request to RunPod
+double-click with no arguments
         ↓
-Wait for generation
-        ↓
-Read output.image_base64
-        ↓
-Decode PNG
-        ↓
-Save skin.png
-```
+GUI
 
-When successful you should see output similar to:
-
-```text
-Sending request to RunPod...
-Saved: C:\...\skin.png
-Size: 64x64
-Seed: 123456
-Mode: text
+run from CMD with arguments
+        ↓
+CLI mode
 ```
 
 ---
@@ -396,9 +411,23 @@ runpod-client.cmd --prompt "cyberpunk girl with purple hair" --steps 40 --guidan
 
 ---
 
-# 15. How the Command Prompt client works
+# 15. How the Windows client works
 
-`cmd.exe` launches:
+When you double-click the CMD file:
+
+```text
+runpod-client.cmd
+        ↓
+mshta.exe
+        ↓
+runpod-client.hta
+        ↓
+runpod-client.js
+        ↓
+RunPod
+```
+
+When you use command-line arguments:
 
 ```text
 runpod-client.cmd
@@ -406,12 +435,16 @@ runpod-client.cmd
 cscript.exe
         ↓
 runpod-client.js
+        ↓
+RunPod
 ```
 
-The JavaScript uses built-in Windows components:
+The shared JavaScript contains the RunPod API logic for both GUI and CLI modes.
+
+It uses built-in Windows components:
 
 ```text
-Windows Script Host
+Windows Script Host / HTA
 WinHTTP
 MSXML
 ADODB.Stream
@@ -419,15 +452,17 @@ ADODB.Stream
 
 No Python or PowerShell is required.
 
-For image input, the JavaScript reads the image as binary, converts it to Base64, sends it to RunPod, receives the generated Minecraft skin, decodes it, and writes the PNG to disk.
+For image input, the JavaScript reads the selected file as binary, converts it to Base64 internally, sends it to RunPod, receives the generated Minecraft skin, decodes it, and writes the PNG to disk.
 
 ---
 
-# 16. If `cscript.exe` is blocked
+# 16. If `mshta.exe` or `cscript.exe` is blocked
 
-Some company-managed Windows computers disable Windows Script Host.
+Some company-managed Windows computers disable Windows Script Host or `mshta.exe`.
 
-If you receive an error saying `cscript.exe` is unavailable or Windows Script Host is disabled, the local `.cmd` client cannot run on that machine.
+If `mshta.exe` is blocked, the double-click GUI will not open, but CLI mode may still work through `cscript.exe`.
+
+If both `mshta.exe` and `cscript.exe` are blocked, the local client cannot run on that machine.
 
 You can still use:
 
