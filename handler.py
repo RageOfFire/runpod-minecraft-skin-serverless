@@ -27,6 +27,14 @@ MAX_REFERENCE_BYTES = int(os.getenv("MAX_REFERENCE_BYTES", str(6 * 1024 * 1024))
 MAX_REFERENCE_PIXELS = int(os.getenv("MAX_REFERENCE_PIXELS", str(20_000_000)))
 REFERENCE_CANVAS = int(os.getenv("REFERENCE_CANVAS", "1024"))
 
+# Auto sprite-sheet detection is intentionally conservative. A false negative can
+# be overridden with reference_mode="sprite_sheet" + sprite_rows/sprite_columns,
+# while a false positive would feed the wrong crop to IP-Adapter.
+SPRITE_MIN_CELL = int(os.getenv("SPRITE_MIN_CELL", "16"))
+SPRITE_MAX_CELL = int(os.getenv("SPRITE_MAX_CELL", "256"))
+SPRITE_MIN_CELLS = int(os.getenv("SPRITE_MIN_CELLS", "6"))
+SPRITE_MAX_CELLS = int(os.getenv("SPRITE_MAX_CELLS", "64"))
+
 # Empty UV rectangles used by the original model's generated legacy skin sheet.
 BACKGROUND_REGIONS = [
     (32, 0, 40, 8),
@@ -245,8 +253,23 @@ def _float_value(
     return value
 
 
+def _optional_int(data: dict, key: str, minimum: int, maximum: int) -> Optional[int]:
+    value = data.get(key)
+    if value is None or value == "":
+        return None
+    value = int(value)
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}")
+    return value
+
+
 def _decode_reference_image(encoded: Optional[str]) -> Optional[Image.Image]:
-    """Decode an optional PNG/JPEG/WebP/GIF first-frame image from Base64/data URI."""
+    """Decode an optional PNG/JPEG/WebP/GIF first-frame image from Base64/data URI.
+
+    Important: this returns the source image before any IP-Adapter preprocessing.
+    The raw source is never passed directly to IP-Adapter; `_prepare_reference_image`
+    always normalizes it and crops sprite sheets first.
+    """
     if encoded is None:
         return None
 
@@ -286,37 +309,286 @@ def _decode_reference_image(encoded: Optional[str]) -> Optional[Image.Image]:
                 )
             opened.seek(0)
             opened.load()
-            image = ImageOps.exif_transpose(opened).convert("RGB")
+            # Preserve alpha for sprite-sheet detection and only composite later.
+            image = ImageOps.exif_transpose(opened).convert("RGBA")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("reference image must be a valid PNG, JPEG, WebP, or GIF") from exc
 
-    # Preserve the full character instead of letting CLIP center-crop a tall/wide image.
+    return image
+
+
+def _visible_fraction(cell: Image.Image) -> float:
+    alpha = np.asarray(cell.getchannel("A"), dtype=np.uint8)
+    return float(np.count_nonzero(alpha > 8) / alpha.size)
+
+
+def _grid_metadata(image: Image.Image, rows: int, columns: int) -> Optional[dict]:
+    width, height = image.size
+    if rows < 1 or columns < 1:
+        return None
+    if width % columns != 0 or height % rows != 0:
+        return None
+
+    cell_width = width // columns
+    cell_height = height // rows
+    if cell_width < SPRITE_MIN_CELL or cell_height < SPRITE_MIN_CELL:
+        return None
+    if cell_width > SPRITE_MAX_CELL or cell_height > SPRITE_MAX_CELL:
+        return None
+
+    fractions = []
+    for row in range(rows):
+        for column in range(columns):
+            x1 = column * cell_width
+            y1 = row * cell_height
+            fractions.append(
+                _visible_fraction(image.crop((x1, y1, x1 + cell_width, y1 + cell_height)))
+            )
+
+    occupied = [fraction for fraction in fractions if fraction >= 0.03]
+    total_cells = rows * columns
+    occupied_ratio = len(occupied) / total_cells
+    median_visible = float(np.median(occupied)) if occupied else 0.0
+    variation = (
+        float(np.std(occupied) / max(np.mean(occupied), 1e-6)) if occupied else 999.0
+    )
+
+    return {
+        "rows": rows,
+        "columns": columns,
+        "cell_width": cell_width,
+        "cell_height": cell_height,
+        "total_cells": total_cells,
+        "occupied_cells": len(occupied),
+        "occupied_ratio": occupied_ratio,
+        "median_visible_fraction": median_visible,
+        "visible_variation": variation,
+    }
+
+
+def _detect_sprite_grid(image: Image.Image) -> Optional[dict]:
+    """Conservatively detect a transparent, repeated-frame sprite sheet.
+
+    The Sraosha-style 3x4 / 48x48 RPG sheet is handled explicitly. For other
+    sheets, the detector looks for the largest square-cell grid with many similarly
+    occupied transparent frames. Normal illustrations should normally fall through
+    to single-image mode.
+    """
+    rgba = image.convert("RGBA")
+    width, height = rgba.size
+    alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
+    transparent_fraction = float(np.count_nonzero(alpha < 250) / alpha.size)
+
+    # JPEG and opaque art should not be guessed as a sprite sheet in auto mode.
+    if transparent_fraction < 0.05:
+        return None
+
+    # Common RPG-style character sheet: 3 animation columns x 4 direction rows.
+    if width % 3 == 0 and height % 4 == 0 and width // 3 == height // 4:
+        meta = _grid_metadata(rgba, 4, 3)
+        if meta and meta["occupied_ratio"] >= 0.75 and meta["median_visible_fraction"] >= 0.08:
+            meta["layout"] = "rpg_3x4"
+            meta["confidence"] = "high"
+            return meta
+
+    # Generic square-cell sheets. Prefer the largest plausible cell size so a
+    # 48x48 sheet is not misread as a 24x24 or 16x16 grid.
+    candidates = []
+    max_cell = min(width, height, SPRITE_MAX_CELL)
+    for cell in range(max_cell, SPRITE_MIN_CELL - 1, -1):
+        if width % cell != 0 or height % cell != 0:
+            continue
+        columns = width // cell
+        rows = height // cell
+        total = rows * columns
+        if columns < 2 or rows < 2:
+            continue
+        if not SPRITE_MIN_CELLS <= total <= SPRITE_MAX_CELLS:
+            continue
+
+        meta = _grid_metadata(rgba, rows, columns)
+        if not meta:
+            continue
+        if meta["occupied_ratio"] < 0.80:
+            continue
+        if meta["median_visible_fraction"] < 0.06:
+            continue
+        if meta["visible_variation"] > 0.55:
+            continue
+
+        meta["layout"] = "grid"
+        meta["confidence"] = "medium"
+        candidates.append(meta)
+
+    return candidates[0] if candidates else None
+
+
+def _rgba_on_white(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    white.alpha_composite(rgba)
+    return white.convert("RGB")
+
+
+def _square_for_ip_adapter(image: Image.Image, pixel_art: bool = False) -> Image.Image:
     canvas = max(224, min(REFERENCE_CANVAS, 1536))
+    rgb = _rgba_on_white(image)
+    method = Image.Resampling.NEAREST if pixel_art else Image.Resampling.LANCZOS
     return ImageOps.pad(
-        image,
+        rgb,
         (canvas, canvas),
-        method=Image.Resampling.LANCZOS,
+        method=method,
         color=(255, 255, 255),
         centering=(0.5, 0.5),
     )
 
 
+def _prepare_reference_image(
+    source: Image.Image,
+    reference_mode: str = "auto",
+    sprite_rows: Optional[int] = None,
+    sprite_columns: Optional[int] = None,
+    sprite_front_row: Optional[int] = None,
+    sprite_front_column: Optional[int] = None,
+) -> tuple[Image.Image, dict]:
+    """Preprocess a source reference before it reaches IP-Adapter.
+
+    - auto: detect transparent sprite sheets; otherwise use a normalized single image.
+    - single: never split the source.
+    - sprite_sheet: require/detect a grid, then send only one selected frame.
+
+    For 3x4 RPG sheets, the default frame is row 0 / column 1: the center idle
+    frame of the first direction row, which matches the supplied Sraosha sheet.
+    """
+    mode = str(reference_mode or "auto").lower().strip()
+    aliases = {
+        "image": "single",
+        "single_image": "single",
+        "sprite": "sprite_sheet",
+        "spritesheet": "sprite_sheet",
+    }
+    mode = aliases.get(mode, mode)
+    if mode not in {"auto", "single", "sprite_sheet"}:
+        raise ValueError("reference_mode must be 'auto', 'single', or 'sprite_sheet'")
+
+    source = source.convert("RGBA")
+    width, height = source.size
+
+    grid = None
+    if sprite_rows is not None or sprite_columns is not None:
+        if sprite_rows is None or sprite_columns is None:
+            raise ValueError("sprite_rows and sprite_columns must be provided together")
+        grid = _grid_metadata(source, sprite_rows, sprite_columns)
+        if grid is None:
+            raise ValueError(
+                "sprite_rows/sprite_columns do not evenly divide the reference image "
+                "or produce a supported cell size"
+            )
+        grid["layout"] = "manual_grid"
+        grid["confidence"] = "manual"
+    elif mode != "single":
+        grid = _detect_sprite_grid(source)
+
+    use_sprite = grid is not None and mode != "single"
+    if mode == "sprite_sheet" and grid is None:
+        raise ValueError(
+            "could not detect a sprite-sheet grid; provide sprite_rows and sprite_columns"
+        )
+
+    if not use_sprite:
+        prepared = _square_for_ip_adapter(source, pixel_art=False)
+        return prepared, {
+            "mode": "single_image",
+            "input_width": width,
+            "input_height": height,
+            "ip_adapter_width": prepared.width,
+            "ip_adapter_height": prepared.height,
+        }
+
+    rows = int(grid["rows"])
+    columns = int(grid["columns"])
+    cell_width = int(grid["cell_width"])
+    cell_height = int(grid["cell_height"])
+
+    if sprite_front_row is None:
+        # In common 3x4 RPG sheets, row 0 is the front/down-facing direction.
+        selected_row = 0
+    else:
+        selected_row = sprite_front_row
+
+    if sprite_front_column is None:
+        # Center animation frame is normally the neutral/idle pose.
+        selected_column = columns // 2
+    else:
+        selected_column = sprite_front_column
+
+    if not 0 <= selected_row < rows:
+        raise ValueError(f"sprite_front_row must be between 0 and {rows - 1}")
+    if not 0 <= selected_column < columns:
+        raise ValueError(f"sprite_front_column must be between 0 and {columns - 1}")
+
+    x1 = selected_column * cell_width
+    y1 = selected_row * cell_height
+    frame = source.crop((x1, y1, x1 + cell_width, y1 + cell_height))
+    prepared = _square_for_ip_adapter(frame, pixel_art=True)
+
+    return prepared, {
+        "mode": "sprite_sheet",
+        "input_width": width,
+        "input_height": height,
+        "layout": grid.get("layout", "grid"),
+        "confidence": grid.get("confidence", "unknown"),
+        "rows": rows,
+        "columns": columns,
+        "cell_width": cell_width,
+        "cell_height": cell_height,
+        "selected_row": selected_row,
+        "selected_column": selected_column,
+        "selected_frame_index": selected_row * columns + selected_column,
+        "ip_adapter_width": prepared.width,
+        "ip_adapter_height": prepared.height,
+    }
+
+
 def handler(event: dict) -> dict:
     data = event.get("input") or {}
 
-    reference_image = _decode_reference_image(data.get("reference_image_base64"))
+    reference_source = _decode_reference_image(data.get("reference_image_base64"))
     prompt = str(data.get("prompt", "")).strip()
 
-    if not prompt and reference_image is None:
+    if not prompt and reference_source is None:
         raise ValueError("provide input.prompt, input.reference_image_base64, or both")
     if len(prompt) > 600:
         raise ValueError("input.prompt must be 600 characters or fewer")
 
-    if not prompt:
-        prompt = (
-            "Minecraft character skin matching the reference character, faithful outfit, "
-            "colors, hair, face, and accessories"
+    reference_processing = None
+    reference_image = None
+    if reference_source is not None:
+        reference_mode = str(data.get("reference_mode", "auto"))
+        sprite_rows = _optional_int(data, "sprite_rows", 1, 64)
+        sprite_columns = _optional_int(data, "sprite_columns", 1, 64)
+        sprite_front_row = _optional_int(data, "sprite_front_row", 0, 63)
+        sprite_front_column = _optional_int(data, "sprite_front_column", 0, 63)
+        reference_image, reference_processing = _prepare_reference_image(
+            reference_source,
+            reference_mode=reference_mode,
+            sprite_rows=sprite_rows,
+            sprite_columns=sprite_columns,
+            sprite_front_row=sprite_front_row,
+            sprite_front_column=sprite_front_column,
         )
+
+    if not prompt:
+        if reference_processing and reference_processing["mode"] == "sprite_sheet":
+            prompt = (
+                "Minecraft character skin matching the selected front-facing sprite frame, "
+                "faithful outfit, colors, hair, face, and accessories"
+            )
+        else:
+            prompt = (
+                "Minecraft character skin matching the reference character, faithful outfit, "
+                "colors, hair, face, and accessories"
+            )
         source_mode = "image"
     elif reference_image is not None:
         source_mode = "text+image"
@@ -344,8 +616,11 @@ def handler(event: dict) -> dict:
     pipe = get_pipeline()
     generator = torch.Generator(device="cuda").manual_seed(seed)
 
-    # The IP-Adapter is installed on the pipeline once. For text-only requests,
-    # feed a neutral image with scale 0 so the same pipeline remains valid.
+    # The IP-Adapter never receives the raw uploaded source. It receives either:
+    # 1) the selected sprite frame, normalized to a square; or
+    # 2) a normalized single-image reference.
+    # For text-only requests, feed a neutral image with scale 0 so the same
+    # pipeline remains valid.
     ip_image = reference_image if reference_image is not None else _blank_reference
     ip_scale = reference_strength if reference_image is not None else 0.0
 
@@ -369,7 +644,7 @@ def handler(event: dict) -> dict:
     skin = legacy_to_modern(legacy) if output_format == "modern" else legacy
     png_b64, png_bytes, sha256 = _encode_png(skin)
 
-    return {
+    output = {
         "image_base64": png_b64,
         "mime_type": "image/png",
         "width": skin.width,
@@ -386,6 +661,10 @@ def handler(event: dict) -> dict:
         "model": MODEL_ID,
         "image_adapter": f"{IP_ADAPTER_ID}/{IP_ADAPTER_WEIGHT}",
     }
+    if reference_processing is not None:
+        output["reference_processing"] = reference_processing
+
+    return output
 
 
 if __name__ == "__main__":
