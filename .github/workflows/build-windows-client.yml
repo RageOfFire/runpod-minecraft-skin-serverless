@@ -29,18 +29,36 @@ jobs:
       - name: Restore
         run: dotnet restore windows-client/MinecraftSkinRunPod.csproj
 
-      - name: Publish self-contained x64 EXE
+      - name: Publish Full package
         run: >
           dotnet publish windows-client/MinecraftSkinRunPod.csproj
           -c Release
           -r win-x64
           --self-contained true
-          -o windows-client/publish
+          -p:PublishSingleFile=false
+          -o windows-client/publish/full
 
-      - name: Upload Windows EXE
+      - name: Publish Lite package
+        run: >
+          dotnet publish windows-client/MinecraftSkinRunPod.csproj
+          -c Release
+          -r win-x64
+          --self-contained false
+          -p:PublishSingleFile=false
+          -o windows-client/publish/lite
+
+      - name: Upload Full package
         uses: actions/upload-artifact@v4
         with:
-          name: MinecraftSkinRunPod-win-x64
-          path: windows-client/publish/MinecraftSkinRunPod.exe
+          name: MinecraftSkinGenerator-Full
+          path: windows-client/publish/full/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Lite package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinecraftSkinGenerator-Lite
+          path: windows-client/publish/lite/**
           if-no-files-found: error
           retention-days: 30

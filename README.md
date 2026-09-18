@@ -8,7 +8,7 @@ Generate a directly usable Minecraft skin from:
 
 The RunPod worker returns a **64×64 PNG Minecraft skin** using the Classic/Steve player model.
 
-The project is designed for a locked-down Windows laptop. The recommended local client is now a **C# WinForms self-contained x64 EXE** built by GitHub Actions. You do not need Visual Studio, the .NET SDK, Python, PowerShell, Git, Docker Desktop, or Docker Hub on the laptop.
+The project is designed for a locked-down Windows laptop. The recommended local client is now a **C# WinForms x64 app** built by GitHub Actions in two packages: **Full** (self-contained) and **Lite** (framework-dependent). You do not need Visual Studio, Python, PowerShell, Git, Docker Desktop, or Docker Hub on the laptop.
 
 ---
 
@@ -141,10 +141,10 @@ Successful output includes:
 
 # 6. C# Windows app
 
-The recommended Windows client is:
+The recommended Windows client executable is:
 
 ```text
-MinecraftSkinRunPod.exe
+MinecraftSkinGenerator.exe
 ```
 
 Technology:
@@ -154,11 +154,24 @@ C#
 WinForms
 .NET 10
 Windows x64
-Self-contained
-Single-file publish
+Multi-file publish
 ```
 
-Because it is self-contained, the target PC does **not** need the .NET runtime installed.
+GitHub Actions builds two versions:
+
+```text
+MinecraftSkinGenerator-Full.zip
+  → self-contained = true
+  → includes the .NET runtime
+  → no .NET install required
+
+MinecraftSkinGenerator-Lite.zip
+  → self-contained = false
+  → much smaller
+  → requires the .NET 10 Desktop Runtime
+```
+
+Neither package uses single-file publishing. Keep the extracted files together in the same folder as `MinecraftSkinGenerator.exe`.
 
 The GUI provides:
 
@@ -181,7 +194,7 @@ The app always requests the modern **64×64** skin format.
 
 ---
 
-# 7. Build/download the Windows EXE
+# 7. Build/download the Windows app
 
 GitHub Actions builds the Windows app automatically whenever `windows-client/**` changes.
 
@@ -193,18 +206,28 @@ GitHub repository
 → Build Windows Client
 → latest successful run
 → Artifacts
-→ MinecraftSkinRunPod-win-x64
 ```
 
-Download the artifact ZIP, extract it, and run:
+Two downloadable artifacts are produced:
 
 ```text
-MinecraftSkinRunPod.exe
+MinecraftSkinGenerator-Full.zip
+MinecraftSkinGenerator-Lite.zip
+```
+
+Choose **Full** if you want the app to run without installing .NET.
+
+Choose **Lite** if the PC already has the .NET 10 Desktop Runtime and you want a much smaller download.
+
+Extract the entire ZIP, keep all extracted files together, and run:
+
+```text
+MinecraftSkinGenerator.exe
 ```
 
 You do not need to compile anything locally.
 
-The EXE is currently unsigned, so Windows SmartScreen or company security software may show an unknown-publisher warning.
+The EXE is currently unsigned, so Windows SmartScreen or company security software may show an unknown-publisher warning. Using a normal multi-file publish may reduce some heuristic suspicion compared with a bundled single-file executable, but it does not replace code signing.
 
 ---
 
@@ -392,9 +415,11 @@ Windows-client changes trigger:
 ```text
 Build Windows Client
         ↓
-self-contained win-x64 publish
+Full win-x64 publish (self-contained)
+Lite win-x64 publish (framework-dependent)
         ↓
-MinecraftSkinRunPod-win-x64 artifact
+MinecraftSkinGenerator-Full.zip
+MinecraftSkinGenerator-Lite.zip
 ```
 
 C#-only changes no longer rebuild the large RunPod Docker image.
@@ -505,8 +530,9 @@ That keeps the RunPod API key entirely off end-user machines.
 [ ] Endpoint request works in RunPod
 [ ] RunPod API key created
 [ ] Build Windows Client is green
-[ ] MinecraftSkinRunPod-win-x64 artifact downloaded
-[ ] MinecraftSkinRunPod.exe launched
+[ ] Full or Lite Windows package downloaded
+[ ] Entire ZIP extracted
+[ ] MinecraftSkinGenerator.exe launched
 [ ] Endpoint ID + API key saved in Settings
 [ ] Prompt-only generation works
 [ ] Reference-image generation works
