@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace MinecraftSkinRunPod;
 
@@ -24,6 +25,7 @@ internal sealed class MainForm : Form
     private readonly Button _cancelButton = new();
     private readonly Button _openFolderButton = new();
     private readonly Button _saveAsButton = new();
+    private readonly Button _viewResponseButton = new();
 
     private readonly RunPodClient _client = new();
 
@@ -31,6 +33,7 @@ internal sealed class MainForm : Form
     private CancellationTokenSource? _generationCancellation;
     private GenerationResult? _lastResult;
     private string? _lastSavedPath;
+    private string? _lastResponsePath;
 
     public MainForm()
     {
@@ -263,7 +266,7 @@ internal sealed class MainForm : Form
         outputRow.Controls.Add(browseOutputButton, 1, 0);
 
         AddField(form, "Output PNG", outputRow,
-            "The generated skin is saved automatically when the request completes.");
+            "The generated skin is saved automatically when the request completes. A JSON response file is also saved next to the PNG.");
 
         scroll.Controls.Add(form);
         return scroll;
@@ -358,10 +361,16 @@ internal sealed class MainForm : Form
         _saveAsButton.Enabled = false;
         _saveAsButton.Click += (_, _) => SaveLastResultAs();
 
+        _viewResponseButton.Text = "View Response";
+        _viewResponseButton.AutoSize = true;
+        _viewResponseButton.Enabled = false;
+        _viewResponseButton.Click += (_, _) => ViewResponse();
+
         buttons.Controls.Add(_generateButton);
         buttons.Controls.Add(_cancelButton);
         buttons.Controls.Add(_openFolderButton);
         buttons.Controls.Add(_saveAsButton);
+        buttons.Controls.Add(_viewResponseButton);
 
         footer.Controls.Add(statusPanel, 0, 0);
         footer.Controls.Add(buttons, 1, 0);
@@ -451,12 +460,21 @@ internal sealed class MainForm : Form
                 result.PngBytes,
                 _generationCancellation.Token);
 
+            var responsePath = BuildResponsePath(fullOutputPath);
+            var prettyJson = PrettyPrintJson(result.RawResponse);
+            await File.WriteAllTextAsync(
+                responsePath,
+                prettyJson,
+                _generationCancellation.Token);
+
             _lastResult = result;
             _lastSavedPath = fullOutputPath;
+            _lastResponsePath = responsePath;
             SetOutputPreview(result.PngBytes);
 
             _openFolderButton.Enabled = true;
             _saveAsButton.Enabled = true;
+            _viewResponseButton.Enabled = true;
 
             var details = $"Done - saved {Path.GetFileName(fullOutputPath)}";
             if (result.Width > 0 && result.Height > 0)
@@ -471,6 +489,7 @@ internal sealed class MainForm : Form
             {
                 details += $" | {result.SourceMode}";
             }
+            details += $" | JSON: {Path.GetFileName(responsePath)}";
 
             _statusLabel.Text = details;
         }
@@ -649,6 +668,61 @@ internal sealed class MainForm : Form
         }
     }
 
+    private void ViewResponse()
+    {
+        if (string.IsNullOrWhiteSpace(_lastResponsePath) || !File.Exists(_lastResponsePath))
+        {
+            MessageBox.Show(this,
+                "No saved JSON response was found yet. Generate a skin first.",
+                "Response not found",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _lastResponsePath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Could not open response JSON",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static string BuildResponsePath(string fullOutputPath)
+    {
+        var directory = Path.GetDirectoryName(fullOutputPath) ?? string.Empty;
+        var fileName = Path.GetFileNameWithoutExtension(fullOutputPath);
+        return Path.Combine(directory, fileName + "-response.json");
+    }
+
+    private static string PrettyPrintJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
     private void SetReferencePreview(string path)
     {
         ReplacePicture(_referencePreview, TryLoadImage(path));
@@ -699,6 +773,10 @@ internal sealed class MainForm : Form
         _generateButton.Enabled = !busy;
         _cancelButton.Enabled = busy;
         _progress.Visible = busy;
+        _viewResponseButton.Enabled =
+            !busy &&
+            !string.IsNullOrWhiteSpace(_lastResponsePath) &&
+            File.Exists(_lastResponsePath);
 
         if (!preserveStatus && status is not null)
         {
