@@ -1,0 +1,46 @@
+name: Build Windows Client
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "windows-client/**"
+      - ".github/workflows/build-windows-client.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore windows-client/MinecraftSkinRunPod.csproj
+
+      - name: Publish self-contained x64 EXE
+        run: >
+          dotnet publish windows-client/MinecraftSkinRunPod.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -o windows-client/publish
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinecraftSkinRunPod-win-x64
+          path: windows-client/publish/MinecraftSkinRunPod.exe
+          if-no-files-found: error
+          retention-days: 30
