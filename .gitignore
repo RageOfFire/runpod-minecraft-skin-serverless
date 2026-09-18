@@ -3,3 +3,8 @@ __pycache__/
 .env
 skin*.png
 output*.png
+
+# C# Windows client build output
+windows-client/bin/
+windows-client/obj/
+windows-client/publish/
